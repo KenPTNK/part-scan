@@ -311,6 +311,8 @@ table.dettable td.cf { color: var(--amber); }
 
 @st.cache_resource(show_spinner=False)
 def load_cnn():
+    # oneDNN custom ops gây segfault trên container Streamlit Cloud
+    os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
     import tensorflow as tf
 
     return tf.keras.models.load_model(CNN_PATH, compile=False)
