@@ -1,9 +1,10 @@
-# Python 3.11 (TensorFlow does not support Python 3.14)
-# tensorflow-cpu 2.20 pinned for Streamlit Cloud stability (2.21 segfaults there);
-# numpy left unpinned so pip resolves a version compatible with TF/OpenCV.
+# The CNN runs as TFLite via the lightweight LiteRT runtime — full TensorFlow
+# segfaults on Streamlit Cloud's container and is not needed for inference.
+# (Locally, if ai-edge-litert has no wheel for your OS, the app falls back to
+# tensorflow's bundled tf.lite.Interpreter if TensorFlow is installed.)
 streamlit==1.58.0
 streamlit-webrtc==0.74.2
-tensorflow-cpu==2.20.0
+ai-edge-litert
 ultralytics==8.4.24
 opencv-python==4.13.0.92
 numpy

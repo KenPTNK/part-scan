@@ -23,7 +23,7 @@ from PIL import Image, ImageOps
 # ---------------------------------------------------------------- constants
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
-CNN_PATH = os.path.join(APP_DIR, "mechanical_parts_cnn_final.keras")
+CNN_PATH = os.path.join(APP_DIR, "mechanical_parts_cnn_final.tflite")
 YOLO_PATH = os.path.join(APP_DIR, "best.pt")
 
 # override=True: sửa .env rồi tải lại trang là nhận key mới, không cần khởi động lại
@@ -309,19 +309,35 @@ table.dettable td.cf { color: var(--amber); }
 # --------------------------------------------------------------- model load
 
 
+class TFLiteClassifier:
+    """CNN dạng TFLite — TensorFlow đầy đủ bị segfault trên Streamlit Cloud,
+    nên mô hình được chuyển sang TFLite (kết quả giống hệt bản .keras)."""
+
+    def __init__(self, path):
+        try:
+            # runtime LiteRT gọn nhẹ (bản chạy trên cloud)
+            from ai_edge_litert.interpreter import Interpreter
+        except ImportError:
+            # dự phòng: dùng interpreter kèm trong TensorFlow (máy cục bộ)
+            import tensorflow as tf
+
+            Interpreter = tf.lite.Interpreter
+        self._interp = Interpreter(model_path=path)
+        self._interp.allocate_tensors()
+        self._in = self._interp.get_input_details()[0]["index"]
+        self._out = self._interp.get_output_details()[0]["index"]
+        self._lock = threading.Lock()  # interpreter không an toàn đa luồng
+
+    def predict(self, batch):
+        with self._lock:
+            self._interp.set_tensor(self._in, batch)
+            self._interp.invoke()
+            return self._interp.get_tensor(self._out).copy()
+
+
 @st.cache_resource(show_spinner=False)
 def load_cnn():
-    # Container Streamlit Cloud giới hạn luồng/bộ nhớ — nếu để TF tự cấu hình
-    # theo số core của máy chủ thì tiến trình bị segfault. Phải đặt các biến
-    # môi trường này TRƯỚC khi import tensorflow.
-    os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
-    os.environ.setdefault("OMP_NUM_THREADS", "2")
-    os.environ.setdefault("TF_NUM_INTRAOP_THREADS", "2")
-    os.environ.setdefault("TF_NUM_INTEROP_THREADS", "1")
-    os.environ.setdefault("MALLOC_ARENA_MAX", "2")
-    import tensorflow as tf
-
-    return tf.keras.models.load_model(CNN_PATH, compile=False)
+    return TFLiteClassifier(CNN_PATH)
 
 
 @st.cache_resource(show_spinner=False)
@@ -357,7 +373,7 @@ def classify_cnn(cnn, img_rgb):
     """Phân loại toàn ảnh. Trả về {class: probability}."""
     x = cv2.resize(img_rgb, CNN_INPUT_SIZE, interpolation=cv2.INTER_AREA)
     x = x.astype(np.float32)[None, ...]  # pixel 0-255; rescaling nằm trong mô hình
-    probs = cnn.predict(x, verbose=0)[0]
+    probs = cnn.predict(x)[0]
     return {c: float(p) for c, p in zip(CNN_CLASSES, probs)}
 
 
@@ -628,7 +644,8 @@ def info_page():
             <h4>◎ CNN</h4>
             <div class="role">phân loại toàn ảnh</div>
             <ul>
-                <li>File: <code>mechanical_parts_cnn_final.keras</code></li>
+                <li>File: <code>mechanical_parts_cnn_final.tflite</code>
+                    (chuyển đổi từ Keras, chạy bằng LiteRT)</li>
                 <li>Đầu vào: <code>128 × 128 × 3</code>, rescaling tích hợp trong mô hình</li>
                 <li>Đầu ra: softmax 4 lớp — Vòng bi / Bu lông / Bánh răng / Đai ốc</li>
                 <li>34.6M tham số (11.5M huấn luyện được)</li>

@@ -4,7 +4,7 @@ Streamlit app (Vietnamese UI) that classifies **bearing / bolt / gear / nut** us
 
 | Model | File | What it does |
 |---|---|---|
-| CNN | `mechanical_parts_cnn_final.keras` | Classifies the whole image (4-class softmax, 128×128 input) |
+| CNN | `mechanical_parts_cnn_final.tflite` | Classifies the whole image (4-class softmax, 128×128 input) |
 | YOLOv8 | `best.pt` | Detects each object in the image with a bounding box and class |
 
 ## Requirements
@@ -54,7 +54,7 @@ The repo is deploy-ready for [share.streamlit.io](https://share.streamlit.io):
 2. Advanced settings → Python **3.11**.
 3. Secrets → add `GEMINI_API_KEY = "your_key_here"` to enable the chatbot (optional; the rest of the app works without it).
 
-`packages.txt` provides the OpenCV system libraries; the committed `.keras` model is saved without optimizer state (46MB, identical predictions — the full training checkpoint stays local as `*.orig.keras`).
+`packages.txt` provides the OpenCV system libraries. The CNN ships as a TFLite conversion (`.tflite`, identical predictions) running on the lightweight LiteRT runtime, because full TensorFlow segfaults on Streamlit Cloud's container; the original Keras checkpoints stay local (gitignored).
 
 ## Notes
 

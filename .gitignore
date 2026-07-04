@@ -2,8 +2,8 @@
 .env
 .streamlit/secrets.toml
 
-# local backup of the full (optimizer-state) model
-*.orig.keras
+# local Keras checkpoints — the repo ships the TFLite conversion instead
+*.keras
 
 # python
 __pycache__/
