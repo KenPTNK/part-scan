@@ -311,8 +311,14 @@ table.dettable td.cf { color: var(--amber); }
 
 @st.cache_resource(show_spinner=False)
 def load_cnn():
-    # oneDNN custom ops gây segfault trên container Streamlit Cloud
+    # Container Streamlit Cloud giới hạn luồng/bộ nhớ — nếu để TF tự cấu hình
+    # theo số core của máy chủ thì tiến trình bị segfault. Phải đặt các biến
+    # môi trường này TRƯỚC khi import tensorflow.
     os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
+    os.environ.setdefault("OMP_NUM_THREADS", "2")
+    os.environ.setdefault("TF_NUM_INTRAOP_THREADS", "2")
+    os.environ.setdefault("TF_NUM_INTEROP_THREADS", "1")
+    os.environ.setdefault("MALLOC_ARENA_MAX", "2")
     import tensorflow as tf
 
     return tf.keras.models.load_model(CNN_PATH, compile=False)
