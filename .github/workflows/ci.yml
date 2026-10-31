@@ -1,0 +1,36 @@
+name: ci
+on: [push, pull_request]
+
+jobs:
+  models:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: xargs sudo apt-get install -y < packages.txt
+      # CPU-only torch keeps the install small
+      - run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -r requirements.txt
+      - run: python -m py_compile app.py
+      - name: Both models load and run one inference
+        run: |
+          python - <<'PY'
+          import numpy as np
+          from ai_edge_litert.interpreter import Interpreter
+          from ultralytics import YOLO
+
+          cnn = Interpreter(model_path="mechanical_parts_cnn_final.tflite")
+          cnn.allocate_tensors()
+          cnn.set_tensor(cnn.get_input_details()[0]["index"], np.zeros((1, 128, 128, 3), np.float32))
+          cnn.invoke()
+          probs = cnn.get_tensor(cnn.get_output_details()[0]["index"])[0]
+          assert probs.shape == (4,), probs.shape
+          print("CNN output:", probs)
+
+          yolo = YOLO("best.pt")
+          assert list(yolo.names.values()) == ["Bearing", "Bolt", "Gear", "Nut"], yolo.names
+          yolo.predict(np.zeros((640, 640, 3), np.uint8), verbose=False)
+          print("both models OK")
+          PY
