@@ -9,6 +9,7 @@ Chạy bằng:  py -3.11 -m streamlit run app.py
 API key cho Trợ lý AI đặt trong file .env (GEMINI_API_KEY=...).
 """
 
+import html
 import io
 import json
 import os
@@ -34,12 +35,15 @@ load_dotenv(os.path.join(APP_DIR, ".env"), override=True)
 CNN_CLASSES = ["Bearing", "Bolt", "Gear", "Nut"]
 CNN_INPUT_SIZE = (128, 128)
 
-# Tên hiển thị tiếng Việt (nhãn YOLO vẽ trên ảnh vẫn là tiếng Anh)
+# Tên hiển thị theo ngôn ngữ (nhãn YOLO vẽ trên ảnh luôn là tiếng Anh)
 CLASS_DISPLAY = {
-    "Bearing": "Vòng bi (Bearing)",
-    "Bolt": "Bu lông (Bolt)",
-    "Gear": "Bánh răng (Gear)",
-    "Nut": "Đai ốc (Nut)",
+    "en": {"Bearing": "Bearing", "Bolt": "Bolt", "Gear": "Gear", "Nut": "Nut"},
+    "vi": {
+        "Bearing": "Vòng bi (Bearing)",
+        "Bolt": "Bu lông (Bolt)",
+        "Gear": "Bánh răng (Gear)",
+        "Nut": "Đai ốc (Nut)",
+    },
 }
 
 YOLO_CONF = 0.25
@@ -51,13 +55,190 @@ GEMINI_MODEL = "gemini-2.5-flash"
 
 CLASS_GLYPHS = {"Bearing": "◎", "Bolt": "⌗", "Gear": "✱", "Nut": "⬡"}
 
-MODE_CNN = "CNN"
-MODE_YOLO = "YOLOv8"
-MODE_BOTH = "Cả hai (so sánh)"
+# ID nội bộ cố định; nhãn hiển thị lấy từ STRINGS theo ngôn ngữ
+MODE_CNN = "cnn"
+MODE_YOLO = "yolo"
+MODE_BOTH = "both"
 
-PAGE_CLASSIFY = "🔍  Phân loại"
-PAGE_INFO = "📊  Thông tin Model"
-PAGE_CHAT = "🤖  Trợ lý AI"
+PAGE_CLASSIFY = "classify"
+PAGE_INFO = "info"
+PAGE_CHAT = "chat"
+
+LANGS = {"en": "English", "vi": "Tiếng Việt"}
+
+STRINGS = {
+    "en": {
+        "page_title": "PART·SCAN — mechanical part classifier",
+        "side_sub": "machine vision console",
+        "lang_label": "Language",
+        "page_label": "Page",
+        "page_classify": "🔍  Classify",
+        "page_info": "📊  Model info",
+        "page_chat": "🤖  AI assistant",
+        "model_label": "Model",
+        "mode_cnn": "CNN",
+        "mode_yolo": "YOLOv8",
+        "mode_both": "Both (compare)",
+        "path_ok": "● path OK",
+        "path_missing": "○ file missing",
+        "loading_cnn": "Loading CNN…",
+        "loading_yolo": "Loading YOLOv8…",
+        "cnn_tag": "CNN · whole-image classification",
+        "confidence": "confidence {p:.1f}%",
+        "col_class": "Class",
+        "no_dets": "— no objects above the confidence threshold —",
+        "yolo_tag": "YOLOv8 · object detection · {n} object(s)",
+        "dl_png": "⬇ Annotated image (PNG)",
+        "dl_json": "⬇ Prediction report (JSON)",
+        "live_label": "Continuous webcam inference — results are drawn straight onto the video",
+        "live_caption": ("Press START and allow camera access. YOLO draws bounding boxes on "
+                         "every frame; the CNN label updates every {n} frames. "
+                         "If the video does not run, use the SNAPSHOT tab."),
+        "live_error": ("Live video could not start ({e}). Install it with "
+                       "`py -3.11 -m pip install streamlit-webrtc`, or use the SNAPSHOT tab."),
+        "hero_kicker": "/// inspection console",
+        "hero_sub": ("Bearing · Bolt · Gear · Nut — feed the models an image by upload, "
+                     "camera snapshot or live video."),
+        "tab_upload": "📁  UPLOAD",
+        "tab_camera": "📷  SNAPSHOT",
+        "tab_live": "🎥  LIVE",
+        "uploader": "Drop images here — JPG / PNG / WEBP / BMP",
+        "sample": "Sample {i:02d} — {name}",
+        "original": "original image",
+        "camera": "Point the camera at a part and take a photo",
+        "info_kicker": "/// spec sheet",
+        "info_title": 'MODEL <span class="accent">INFO</span>',
+        "cnn_card": """<div class="spec-card">
+            <h4>◎ CNN</h4>
+            <div class="role">whole-image classification</div>
+            <ul>
+                <li>File: <code>mechanical_parts_cnn_final.tflite</code>
+                    (converted from Keras, runs on LiteRT)</li>
+                <li>Input: <code>128 × 128 × 3</code>, rescaling built into the model</li>
+                <li>Output: 4-class softmax — Bearing / Bolt / Gear / Nut</li>
+                <li>34.6M parameters (11.5M trainable)</li>
+                <li>Residual convolution blocks with squeeze-and-excitation channel
+                    attention, batch-norm and dropout throughout</li>
+                <li>Answers: <em>“what part is this image of?”</em></li>
+            </ul></div>""",
+        "yolo_card": """<div class="spec-card">
+            <h4>⌗ YOLOv8</h4>
+            <div class="role">object detection</div>
+            <ul>
+                <li>File: <code>best.pt</code></li>
+                <li>Task: detection — a bounding box + class for every object</li>
+                <li>Classes: Bearing / Bolt / Gear / Nut</li>
+                <li>Trained at <code>imgsz 800</code>; the app runs
+                    <code>conf ≥ 0.25</code> (640px in live mode)</li>
+                <li>Answers: <em>“which parts are in the image, and where?”</em></li>
+            </ul></div>""",
+        "chat_kicker": "/// technical assistant",
+        "chat_title": 'AI <span class="accent">ASSISTANT</span>',
+        "chat_sub": ("Questions about the PART·SCAN website and mechanical engineering — "
+                     "bearings, bolts, gears, nuts, machinery. The assistant declines "
+                     "topics outside this scope."),
+        "no_key": ("**No API key yet.** Open the `.env` file in the app folder and paste "
+                   "your key:\n\n```\nGEMINI_API_KEY=your_key_here\n```\n\n"
+                   "Get a free key at [aistudio.google.com/apikey]"
+                   "(https://aistudio.google.com/apikey), then restart the app."),
+        "chat_input": "Ask about the website or mechanical parts…",
+        "clear_chat": "🗑 Clear conversation",
+        "chat_error": ("Could not reach the Gemini API. Check the API key in `.env` "
+                       "and your network connection. Details: `{e}`"),
+    },
+    "vi": {
+        "page_title": "PART·SCAN — phân loại chi tiết máy",
+        "side_sub": "bảng điều khiển thị giác máy",
+        "lang_label": "Ngôn ngữ",
+        "page_label": "Trang",
+        "page_classify": "🔍  Phân loại",
+        "page_info": "📊  Thông tin Model",
+        "page_chat": "🤖  Trợ lý AI",
+        "model_label": "Mô hình",
+        "mode_cnn": "CNN",
+        "mode_yolo": "YOLOv8",
+        "mode_both": "Cả hai (so sánh)",
+        "path_ok": "● đường dẫn OK",
+        "path_missing": "○ thiếu file",
+        "loading_cnn": "Đang nạp CNN…",
+        "loading_yolo": "Đang nạp YOLOv8…",
+        "cnn_tag": "CNN · phân loại toàn ảnh",
+        "confidence": "độ tin cậy {p:.1f}%",
+        "col_class": "Loại",
+        "no_dets": "— không có vật thể nào vượt ngưỡng confidence —",
+        "yolo_tag": "YOLOv8 · phát hiện vật thể · {n} vật thể",
+        "dl_png": "⬇ Ảnh đã gắn nhãn (PNG)",
+        "dl_json": "⬇ Báo cáo dự đoán (JSON)",
+        "live_label": "Suy luận liên tục qua webcam — kết quả được vẽ trực tiếp lên luồng video",
+        "live_caption": ("Nhấn START và cho phép truy cập camera. YOLO vẽ bounding box trên "
+                         "từng khung hình; nhãn CNN cập nhật mỗi {n} khung hình. "
+                         "Nếu luồng video không chạy được, hãy dùng tab CHỤP ẢNH."),
+        "live_error": ("Không chạy được video trực tiếp ({e}). Cài đặt bằng "
+                       "`py -3.11 -m pip install streamlit-webrtc`, hoặc dùng tab CHỤP ẢNH."),
+        "hero_kicker": "/// bảng điều khiển kiểm tra",
+        "hero_sub": ("Vòng bi · Bu lông · Bánh răng · Đai ốc — đưa ảnh vào mô hình bằng "
+                     "cách tải lên, chụp ảnh hoặc video trực tiếp."),
+        "tab_upload": "📁  TẢI ẢNH",
+        "tab_camera": "📷  CHỤP ẢNH",
+        "tab_live": "🎥  TRỰC TIẾP",
+        "uploader": "Thả ảnh vào đây — JPG / PNG / WEBP / BMP",
+        "sample": "Mẫu {i:02d} — {name}",
+        "original": "ảnh gốc",
+        "camera": "Hướng camera vào chi tiết máy và chụp ảnh",
+        "info_kicker": "/// bảng thông số",
+        "info_title": 'THÔNG TIN <span class="accent">MODEL</span>',
+        "cnn_card": """<div class="spec-card">
+            <h4>◎ CNN</h4>
+            <div class="role">phân loại toàn ảnh</div>
+            <ul>
+                <li>File: <code>mechanical_parts_cnn_final.tflite</code>
+                    (chuyển đổi từ Keras, chạy bằng LiteRT)</li>
+                <li>Đầu vào: <code>128 × 128 × 3</code>, rescaling tích hợp trong mô hình</li>
+                <li>Đầu ra: softmax 4 lớp — Vòng bi / Bu lông / Bánh răng / Đai ốc</li>
+                <li>34.6M tham số (11.5M huấn luyện được)</li>
+                <li>Các khối residual convolution kết hợp attention kênh kiểu
+                    squeeze-and-excitation, batch-norm và dropout xuyên suốt</li>
+                <li>Trả lời câu hỏi: <em>“ảnh này chụp chi tiết gì?”</em></li>
+            </ul></div>""",
+        "yolo_card": """<div class="spec-card">
+            <h4>⌗ YOLOv8</h4>
+            <div class="role">phát hiện vật thể</div>
+            <ul>
+                <li>File: <code>best.pt</code></li>
+                <li>Nhiệm vụ: detection — bounding box + lớp cho từng vật thể</li>
+                <li>Các lớp: Vòng bi / Bu lông / Bánh răng / Đai ốc</li>
+                <li>Huấn luyện ở <code>imgsz 800</code>; ứng dụng chạy
+                    <code>conf ≥ 0.25</code> (640px ở chế độ trực tiếp)</li>
+                <li>Trả lời câu hỏi: <em>“trong ảnh có những chi tiết nào, ở đâu?”</em></li>
+            </ul></div>""",
+        "chat_kicker": "/// trợ lý kỹ thuật",
+        "chat_title": 'TRỢ LÝ <span class="accent">AI</span>',
+        "chat_sub": ("Hỏi đáp về website PART·SCAN và kiến thức cơ khí — vòng bi, bu lông, "
+                     "bánh răng, đai ốc, máy móc. Trợ lý sẽ từ chối các chủ đề ngoài phạm vi này."),
+        "no_key": ("**Chưa có API key.** Mở file `.env` trong thư mục ứng dụng và dán "
+                   "key của bạn:\n\n```\nGEMINI_API_KEY=your_key_here\n```\n\n"
+                   "Lấy key miễn phí tại [aistudio.google.com/apikey]"
+                   "(https://aistudio.google.com/apikey), sau đó khởi động lại ứng dụng."),
+        "chat_input": "Hỏi về website hoặc thiết bị cơ khí…",
+        "clear_chat": "🗑 Xóa hội thoại",
+        "chat_error": ("Không gọi được Gemini API. Kiểm tra lại API key trong file "
+                       "`.env` và kết nối mạng. Chi tiết: `{e}`"),
+    },
+}
+assert STRINGS["en"].keys() == STRINGS["vi"].keys()
+
+
+def lang():
+    return st.session_state.get("lang", "en")
+
+
+def t(key, **kw):
+    text = STRINGS[lang()][key]
+    return text.format(**kw) if kw else text
+
+
+def class_name(cls):
+    return CLASS_DISPLAY[lang()].get(cls, cls)
 
 CHAT_SYSTEM_PROMPT = """You are the built-in assistant of PART·SCAN, a Streamlit website that \
 classifies mechanical parts — Bearing (Vòng bi), Bolt (Bu lông), Gear (Bánh răng), Nut (Đai ốc) — \
@@ -352,10 +533,10 @@ def get_models(mode):
     """Nạp các mô hình mà chế độ đang chọn cần (có cache sau lần đầu)."""
     cnn = yolo = None
     if mode in (MODE_CNN, MODE_BOTH):
-        with st.spinner("Đang nạp CNN…"):
+        with st.spinner(t("loading_cnn")):
             cnn = load_cnn()
     if mode in (MODE_YOLO, MODE_BOTH):
-        with st.spinner("Đang nạp YOLOv8…"):
+        with st.spinner(t("loading_yolo")):
             yolo = load_yolo()
     return cnn, yolo
 
@@ -411,17 +592,17 @@ def render_cnn_card(probs):
         lead = " lead" if cls == top else ""
         rows.append(
             f'<div class="probrow{lead}">'
-            f'<span class="plabel">{CLASS_DISPLAY[cls]}</span>'
+            f'<span class="plabel">{class_name(cls)}</span>'
             f'<div class="ptrack"><div class="pfill" style="width:{p * 100:.1f}%"></div></div>'
             f'<span class="pval">{p * 100:.1f}%</span></div>'
         )
     st.markdown(
         f"""<div class="result-card">
-        <div class="model-tag">CNN · phân loại toàn ảnh</div>
+        <div class="model-tag">{t("cnn_tag")}</div>
         <div class="verdict">
             <span class="glyph">{CLASS_GLYPHS.get(top, "")}</span>
-            <span class="name">{CLASS_DISPLAY[top]}</span>
-            <span class="conf">độ tin cậy {probs[top] * 100:.1f}%</span>
+            <span class="name">{class_name(top)}</span>
+            <span class="conf">{t("confidence", p=probs[top] * 100)}</span>
         </div>
         {"".join(rows)}
         </div>""",
@@ -434,30 +615,29 @@ def render_yolo_card(annotated_rgb, dets, key):
     for cls, _, _ in dets:
         counts[cls] = counts.get(cls, 0) + 1
     chips = "".join(
-        f'<span class="chip">{CLASS_GLYPHS.get(c, "")} {CLASS_DISPLAY.get(c, c)} '
+        f'<span class="chip">{CLASS_GLYPHS.get(c, "")} {class_name(c)} '
         f'<span class="n">×{n}</span></span>'
         for c, n in sorted(counts.items())
     )
     if dets:
         body = "".join(
-            f'<tr><td>{i + 1:02d}</td><td class="cls">{CLASS_DISPLAY.get(c, c)}</td>'
+            f'<tr><td>{i + 1:02d}</td><td class="cls">{class_name(c)}</td>'
             f'<td class="cf">{cf * 100:.1f}%</td>'
             f"<td>[{x1}, {y1}, {x2}, {y2}]</td></tr>"
             for i, (c, cf, (x1, y1, x2, y2)) in enumerate(dets)
         )
         table = (
-            '<table class="dettable"><tr><th>#</th><th>Loại</th>'
+            f'<table class="dettable"><tr><th>#</th><th>{t("col_class")}</th>'
             "<th>Conf</th><th>Box x1 y1 x2 y2</th></tr>" + body + "</table>"
         )
         summary = f'<div class="chips">{chips}</div>'
     else:
         table = ""
-        summary = ('<div class="empty-note">— không có vật thể nào vượt '
-                   "ngưỡng confidence —</div>")
+        summary = f'<div class="empty-note">{t("no_dets")}</div>'
 
     st.markdown(
         f"""<div class="result-card">
-        <div class="model-tag">YOLOv8 · phát hiện vật thể · {len(dets)} vật thể</div>
+        <div class="model-tag">{t("yolo_tag", n=len(dets))}</div>
         {summary}{table}
         </div>""",
         unsafe_allow_html=True,
@@ -466,7 +646,7 @@ def render_yolo_card(annotated_rgb, dets, key):
 
     png = cv2.imencode(".png", cv2.cvtColor(annotated_rgb, cv2.COLOR_RGB2BGR))[1].tobytes()
     st.download_button(
-        "⬇ Ảnh đã gắn nhãn (PNG)", png, file_name="detections.png",
+        t("dl_png"), png, file_name="detections.png",
         mime="image/png", key=f"dlimg-{key}",
     )
 
@@ -499,7 +679,7 @@ def render_results(mode, cnn, yolo, img_rgb, key):
             }
 
     st.download_button(
-        "⬇ Báo cáo dự đoán (JSON)",
+        t("dl_json"),
         json.dumps(report, indent=2),
         file_name="prediction.json",
         mime="application/json",
@@ -558,8 +738,7 @@ def make_live_callback(mode, cnn, yolo):
 
 def live_tab(mode, cnn, yolo):
     st.markdown(
-        '<div class="sec-label">Suy luận liên tục qua webcam — kết quả được '
-        "vẽ trực tiếp lên luồng video</div>",
+        f'<div class="sec-label">{t("live_label")}</div>',
         unsafe_allow_html=True,
     )
     try:
@@ -573,16 +752,9 @@ def live_tab(mode, cnn, yolo):
             async_processing=True,
             rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
         )
-        st.caption(
-            "Nhấn START và cho phép truy cập camera. YOLO vẽ bounding box trên "
-            f"từng khung hình; nhãn CNN cập nhật mỗi {CNN_LIVE_EVERY} khung hình. "
-            "Nếu luồng video không chạy được, hãy dùng tab CHỤP ẢNH."
-        )
+        st.caption(t("live_caption", n=CNN_LIVE_EVERY))
     except Exception as e:
-        st.error(
-            f"Không chạy được video trực tiếp ({e}). Cài đặt bằng "
-            "`py -3.11 -m pip install streamlit-webrtc`, hoặc dùng tab CHỤP ẢNH."
-        )
+        st.error(t("live_error", e=e))
 
 
 # --------------------------------------------------------------------- pages
@@ -590,40 +762,40 @@ def live_tab(mode, cnn, yolo):
 
 def classify_page(mode):
     st.markdown(
-        """<div class="hero-kicker">/// bảng điều khiển kiểm tra</div>
+        f"""<div class="hero-kicker">{t("hero_kicker")}</div>
         <p class="hero-title">PART<span class="accent">·</span>SCAN</p>
-        <div class="hero-sub">Vòng bi · Bu lông · Bánh răng · Đai ốc — đưa ảnh vào
-        mô hình bằng cách tải lên, chụp ảnh hoặc video trực tiếp.</div>""",
+        <div class="hero-sub">{t("hero_sub")}</div>""",
         unsafe_allow_html=True,
     )
     st.write("")
 
     cnn, yolo = get_models(mode)
 
-    tab_up, tab_cam, tab_live = st.tabs(["📁  TẢI ẢNH", "📷  CHỤP ẢNH", "🎥  TRỰC TIẾP"])
+    tab_up, tab_cam, tab_live = st.tabs([t("tab_upload"), t("tab_camera"), t("tab_live")])
 
     with tab_up:
         files = st.file_uploader(
-            "Thả ảnh vào đây — JPG / PNG / WEBP / BMP",
+            t("uploader"),
             type=["jpg", "jpeg", "png", "webp", "bmp"],
             accept_multiple_files=True,
+            key="uploads",
         )
         for i, f in enumerate(files or []):
-            st.markdown(f'<div class="sec-label">Mẫu {i + 1:02d} — {f.name}</div>',
+            st.markdown(f'<div class="sec-label">{t("sample", i=i + 1, name=html.escape(f.name))}</div>',
                         unsafe_allow_html=True)
             img_rgb = uploaded_to_rgb(f)
             src, res = st.columns([1, 2], gap="medium") if mode != MODE_BOTH else (
                 st.container(), st.container())
             with src:
                 # in compare mode the source sits above both result columns: keep it thumbnail-sized
-                st.image(img_rgb, caption="ảnh gốc",
+                st.image(img_rgb, caption=t("original"),
                          width=360 if mode == MODE_BOTH else "stretch")
             with res:
                 render_results(mode, cnn, yolo, img_rgb, key=f"up{i}")
             st.divider()
 
     with tab_cam:
-        shot = st.camera_input("Hướng camera vào chi tiết máy và chụp ảnh")
+        shot = st.camera_input(t("camera"), key="camera")
         if shot is not None:
             img_rgb = uploaded_to_rgb(shot)
             render_results(mode, cnn, yolo, img_rgb, key="cam")
@@ -634,54 +806,24 @@ def classify_page(mode):
 
 def info_page():
     st.markdown(
-        """<div class="hero-kicker">/// bảng thông số</div>
-        <p class="hero-title">THÔNG TIN <span class="accent">MODEL</span></p>""",
+        f"""<div class="hero-kicker">{t("info_kicker")}</div>
+        <p class="hero-title">{t("info_title")}</p>""",
         unsafe_allow_html=True,
     )
     st.write("")
 
     c1, c2 = st.columns(2, gap="medium")
     with c1:
-        st.markdown(
-            """<div class="spec-card">
-            <h4>◎ CNN</h4>
-            <div class="role">phân loại toàn ảnh</div>
-            <ul>
-                <li>File: <code>mechanical_parts_cnn_final.tflite</code>
-                    (chuyển đổi từ Keras, chạy bằng LiteRT)</li>
-                <li>Đầu vào: <code>128 × 128 × 3</code>, rescaling tích hợp trong mô hình</li>
-                <li>Đầu ra: softmax 4 lớp — Vòng bi / Bu lông / Bánh răng / Đai ốc</li>
-                <li>34.6M tham số (11.5M huấn luyện được)</li>
-                <li>Các khối residual convolution kết hợp attention kênh kiểu
-                    squeeze-and-excitation, batch-norm và dropout xuyên suốt</li>
-                <li>Trả lời câu hỏi: <em>“ảnh này chụp chi tiết gì?”</em></li>
-            </ul></div>""",
-            unsafe_allow_html=True,
-        )
+        st.markdown(t("cnn_card"), unsafe_allow_html=True)
     with c2:
-        st.markdown(
-            """<div class="spec-card">
-            <h4>⌗ YOLOv8</h4>
-            <div class="role">phát hiện vật thể</div>
-            <ul>
-                <li>File: <code>best.pt</code></li>
-                <li>Nhiệm vụ: detection — bounding box + lớp cho từng vật thể</li>
-                <li>Các lớp: Vòng bi / Bu lông / Bánh răng / Đai ốc</li>
-                <li>Huấn luyện ở <code>imgsz 800</code>; ứng dụng chạy
-                    <code>conf ≥ 0.25</code> (640px ở chế độ trực tiếp)</li>
-                <li>Trả lời câu hỏi: <em>“trong ảnh có những chi tiết nào, ở đâu?”</em></li>
-            </ul></div>""",
-            unsafe_allow_html=True,
-        )
+        st.markdown(t("yolo_card"), unsafe_allow_html=True)
 
 
 def chat_page():
     st.markdown(
-        """<div class="hero-kicker">/// trợ lý kỹ thuật</div>
-        <p class="hero-title">TRỢ LÝ <span class="accent">AI</span></p>
-        <div class="hero-sub">Hỏi đáp về website PART·SCAN và kiến thức cơ khí —
-        vòng bi, bu lông, bánh răng, đai ốc, máy móc. Trợ lý sẽ từ chối các
-        chủ đề ngoài phạm vi này.</div>""",
+        f"""<div class="hero-kicker">{t("chat_kicker")}</div>
+        <p class="hero-title">{t("chat_title")}</p>
+        <div class="hero-sub">{t("chat_sub")}</div>""",
         unsafe_allow_html=True,
     )
     st.write("")
@@ -694,20 +836,15 @@ def chat_page():
         except Exception:
             api_key = ""
     if not api_key:
-        st.info(
-            "**Chưa có API key.** Mở file `.env` trong thư mục ứng dụng và dán "
-            "key của bạn:\n\n```\nGEMINI_API_KEY=your_key_here\n```\n\n"
-            "Lấy key miễn phí tại [aistudio.google.com/apikey]"
-            "(https://aistudio.google.com/apikey), sau đó khởi động lại ứng dụng."
-        )
-        st.chat_input("Hỏi về website hoặc thiết bị cơ khí…", disabled=True)
+        st.info(t("no_key"))
+        st.chat_input(t("chat_input"), disabled=True)
         return
 
     if "chat_messages" not in st.session_state:
         st.session_state.chat_messages = []
 
     if st.session_state.chat_messages:
-        if st.button("🗑 Xóa hội thoại"):
+        if st.button(t("clear_chat")):
             st.session_state.chat_messages = []
             st.rerun()
 
@@ -716,7 +853,7 @@ def chat_page():
         with st.chat_message(role):
             st.markdown(msg["text"])
 
-    prompt = st.chat_input("Hỏi về website hoặc thiết bị cơ khí…")
+    prompt = st.chat_input(t("chat_input"))
     if not prompt:
         return
 
@@ -746,10 +883,7 @@ def chat_page():
                 chunk.text for chunk in stream if chunk.text
             )
         except Exception as e:
-            st.error(
-                "Không gọi được Gemini API. Kiểm tra lại API key trong file "
-                f"`.env` và kết nối mạng. Chi tiết: `{e}`"
-            )
+            st.error(t("chat_error", e=e))
             st.session_state.chat_messages.pop()
             return
 
@@ -761,7 +895,7 @@ def chat_page():
 
 def main():
     st.set_page_config(
-        page_title="PART·SCAN — phân loại chi tiết máy",
+        page_title=t("page_title"),
         page_icon="⚙️",
         layout="wide",
     )
@@ -769,23 +903,35 @@ def main():
 
     with st.sidebar:
         st.markdown(
-            """<div class="side-brand">PART<span class="accent">·</span>SCAN</div>
-            <div class="side-sub">bảng điều khiển thị giác máy</div>
+            f"""<div class="side-brand">PART<span class="accent">·</span>SCAN</div>
+            <div class="side-sub">{t("side_sub")}</div>
             <div class="side-rule"></div>""",
             unsafe_allow_html=True,
         )
-        page = st.radio("Trang", [PAGE_CLASSIFY, PAGE_INFO, PAGE_CHAT],
+        st.radio(t("lang_label"), list(LANGS), format_func=LANGS.get,
+                 key="lang", horizontal=True, label_visibility="collapsed")
+        # keyed per language: relabelled radios otherwise show no selection after a switch
+        pages = [PAGE_CLASSIFY, PAGE_INFO, PAGE_CHAT]
+        page = st.radio(t("page_label"), pages,
+                        index=pages.index(st.session_state.get("page", PAGE_CLASSIFY)),
+                        format_func=lambda p: t(f"page_{p}"), key=f"page-{lang()}",
                         label_visibility="collapsed")
-        st.markdown('<div class="sec-label">Mô hình</div>', unsafe_allow_html=True)
-        mode = st.radio("Mô hình", [MODE_CNN, MODE_YOLO, MODE_BOTH],
+        st.session_state.page = page
+        st.markdown(f'<div class="sec-label">{t("model_label")}</div>',
+                    unsafe_allow_html=True)
+        modes = [MODE_CNN, MODE_YOLO, MODE_BOTH]
+        mode = st.radio(t("model_label"), modes,
+                        index=modes.index(st.session_state.get("mode", MODE_CNN)),
+                        format_func=lambda m: t(f"mode_{m}"), key=f"mode-{lang()}",
                         label_visibility="collapsed")
+        st.session_state.mode = mode
 
         cnn_ok = os.path.exists(CNN_PATH)
         yolo_ok = os.path.exists(YOLO_PATH)
         st.markdown(
             f"""<div class="side-status">
-            CNN&nbsp;&nbsp;{'<span class="ok">● đường dẫn OK</span>' if cnn_ok else "○ thiếu file"}<br>
-            YOLO&nbsp;{'<span class="ok">● đường dẫn OK</span>' if yolo_ok else "○ thiếu file"}
+            CNN&nbsp;&nbsp;{f'<span class="ok">{t("path_ok")}</span>' if cnn_ok else t("path_missing")}<br>
+            YOLO&nbsp;{f'<span class="ok">{t("path_ok")}</span>' if yolo_ok else t("path_missing")}
             </div>""",
             unsafe_allow_html=True,
         )
