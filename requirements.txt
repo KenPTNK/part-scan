@@ -2,7 +2,8 @@
 # segfaults on Streamlit Cloud's container and is not needed for inference.
 # (Locally, if ai-edge-litert has no wheel for your OS, the app falls back to
 # tensorflow's bundled tf.lite.Interpreter if TensorFlow is installed.)
-streamlit==1.58.0
+# 1.58's gzip middleware breaks /media with current Starlette: every st.image returned 500
+streamlit==1.66.1
 streamlit-webrtc==0.74.2
 ai-edge-litert
 ultralytics==8.4.24
