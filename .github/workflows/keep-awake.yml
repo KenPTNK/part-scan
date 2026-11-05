@@ -1,0 +1,43 @@
+name: keep-awake
+# Streamlit Community Cloud puts apps to sleep after ~12h without visitors.
+# A real browser visit every 6h keeps the app warm (a plain curl does not count as a visit).
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write # only for the re-enable step below
+  contents: read
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install playwright && python -m playwright install --with-deps chromium
+      - name: Visit the app and wait until it has loaded
+        run: |
+          python - <<'PY'
+          from playwright.sync_api import sync_playwright
+          URL = "https://part-scan-kenptnk.streamlit.app/"
+          with sync_playwright() as p:
+              page = p.chromium.launch().new_page()
+              page.goto(URL, timeout=120_000)
+              wake = page.get_by_role("button", name="Yes, get this app back up!")
+              if wake.count():
+                  print("app was asleep, waking it")
+                  wake.click()
+              # the tab title switches to the app's own title once it has really loaded
+              page.wait_for_function("document.title.includes('PART')", timeout=300_000)
+              print("app is up:", page.title())
+          PY
+      # GitHub disables scheduled workflows after 60 days without repo activity; this keeps it on.
+      - name: Keep this schedule enabled
+        if: always()
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/keep-awake.yml/enable"
+        env:
+          GH_TOKEN: ${{ github.token }}
