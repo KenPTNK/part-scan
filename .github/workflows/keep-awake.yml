@@ -22,18 +22,29 @@ jobs:
       - name: Visit the app and wait until it has loaded
         run: |
           python - <<'PY'
+          import time
           from playwright.sync_api import sync_playwright
           URL = "https://part-scan-kenptnk.streamlit.app/"
           with sync_playwright() as p:
               page = p.chromium.launch().new_page()
               page.goto(URL, timeout=120_000)
+              # The sleep page draws its button with JS after load, so checking once right after
+              # goto() misses it. Poll: click the button when it appears, finish when the app's
+              # own title (contains "PART") shows up.
               wake = page.get_by_role("button", name="Yes, get this app back up!")
-              if wake.count():
-                  print("app was asleep, waking it")
-                  wake.click()
-              # the tab title switches to the app's own title once it has really loaded
-              page.wait_for_function("document.title.includes('PART')", timeout=300_000)
-              print("app is up:", page.title())
+              clicked = False
+              deadline = time.time() + 480
+              while time.time() < deadline:
+                  if "PART" in page.title():
+                      print("app is up:", page.title())
+                      break
+                  if not clicked and wake.count():
+                      print("app was asleep, waking it")
+                      wake.click()
+                      clicked = True
+                  page.wait_for_timeout(2_000)
+              else:
+                  raise SystemExit(f"app did not load in 8 min (clicked wake: {clicked}, title: {page.title()!r})")
           PY
       # GitHub disables scheduled workflows after 60 days without repo activity; this keeps it on.
       - name: Keep this schedule enabled
